@@ -252,7 +252,7 @@ pg_decode_shutdown(LogicalDecodingContext *ctx)
 {
 	TestDecodingData *data = ctx->output_plugin_private;
 
-	/* clean up the table list (TODO: make this part of the memory context) */
+	/* clean up the table list (TODO: can I make this part of the memory context? Probably not, it gets reset after every line) */
 	nlfree(data->table_list);
 
 	/* cleanup our own resources via memory context reset */
