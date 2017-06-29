@@ -83,11 +83,9 @@ static int nlcheckname(namelist *node, char *name);
 
 static namelist *nladdname(namelist *list, char *name)
 {
-	namelist *node = malloc(sizeof *node);
-	if(!node) return list;
+	namelist *node = palloc(sizeof *node);
 	node->next = list;
-	node->name = strdup(name);
-	if(!node->name) { free(node); return list; }
+	node->name = pstrdup(name);
 	return node;
 }
 
@@ -99,6 +97,14 @@ static int nlcheckname(namelist *node, char *name)
 		node = node->next;
 	}
 	return 0;
+}
+
+static void nlfree(namelist *node)
+{
+	while(node) {
+		pfree(node->name);
+		node = node->next;
+	}
 }
 
 void
@@ -245,6 +251,9 @@ static void
 pg_decode_shutdown(LogicalDecodingContext *ctx)
 {
 	TestDecodingData *data = ctx->output_plugin_private;
+
+	/* clean up the table list (TODO: make this part of the memory context) */
+	nlfree(data->table_list);
 
 	/* cleanup our own resources via memory context reset */
 	MemoryContextDelete(data->context);
