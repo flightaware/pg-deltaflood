@@ -263,24 +263,8 @@ pg_decode_shutdown(LogicalDecodingContext *ctx)
 static void
 pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
-	TestDecodingData *data = ctx->output_plugin_private;
-
-	data->xact_wrote_changes = false;
-	if (data->skip_empty_xacts)
-		return;
-
-	pg_output_begin(ctx, data, txn, true);
-}
-
-static void
-pg_output_begin(LogicalDecodingContext *ctx, TestDecodingData *data, ReorderBufferTXN *txn, bool last_write)
-{
-	OutputPluginPrepareWrite(ctx, last_write);
-	if (data->include_xids)
-		appendStringInfo(ctx->out, "BEGIN %u", txn->xid);
-	else
-		appendStringInfoString(ctx->out, "BEGIN");
-	OutputPluginWrite(ctx, last_write);
+	// Ignore BEGIN.
+	return;
 }
 
 /* COMMIT callback */
@@ -288,22 +272,7 @@ static void
 pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
-	TestDecodingData *data = ctx->output_plugin_private;
-
-	if (data->skip_empty_xacts && !data->xact_wrote_changes)
-		return;
-
-	OutputPluginPrepareWrite(ctx, true);
-	if (data->include_xids)
-		appendStringInfo(ctx->out, "COMMIT %u", txn->xid);
-	else
-		appendStringInfoString(ctx->out, "COMMIT");
-
-	if (data->include_timestamp)
-		appendStringInfo(ctx->out, " (at %s)",
-						 timestamptz_to_str(txn->commit_time));
-
-	OutputPluginWrite(ctx, true);
+	// Ignore COMMIT.
 }
 
 static bool
@@ -466,16 +435,14 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	data = ctx->output_plugin_private;
 	class_form = RelationGetForm(relation);
 
+	// filter empty tuples
+	if (change->data.tp.newtuple == NULL)
+		return;
+
+	// filter tables
 	table_name = NameStr(class_form->relname);
 	if (data->table_list && !nlcheckname(data->table_list, table_name))
 		return;
-
-	/* output BEGIN if we haven't yet */
-	if (data->skip_empty_xacts && !data->xact_wrote_changes)
-	{
-		pg_output_begin(ctx, data, txn, false);
-	}
-	data->xact_wrote_changes = true;
 
 	tupdesc = RelationGetDescr(relation);
 
@@ -484,58 +451,33 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 
-	appendStringInfoString(ctx->out, "table ");
-	appendStringInfoString(ctx->out,
-						   quote_qualified_identifier(
-													  get_namespace_name(
-																		 get_rel_namespace(RelationGetRelid(relation))),
-													  NameStr(class_form->relname)));
-	appendStringInfoChar(ctx->out, ':');
+	// Output _table_name\t$table_name
+	appendStringInfoString(ctx->out, "_table\t");
+	appendStringInfoString(ctx->out, table_name);
+#ifdef FULLTABLENAME
+	appendStringInfoString(ctx->out, "\t_qualified_table\t");
+	appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
+#endif
 
-	switch (change->action)
-	{
+	// Output \t_xid\t$xid
+	appendStringInfoString(ctx->out, "\t_xid\t");
+	appendInteger(ctx->out, txn->xid);
+
+	// Output \t_action\t$action
+	switch (change->action) {
 		case REORDER_BUFFER_CHANGE_INSERT:
-			appendStringInfoString(ctx->out, " INSERT:");
-			if (change->data.tp.newtuple == NULL)
-				appendStringInfoString(ctx->out, " (no-tuple-data)");
-			else
-				tuple_to_stringinfo(ctx->out, tupdesc,
-									&change->data.tp.newtuple->tuple,
-									false);
+			appendStringInfoString(ctx->out, "\t_action\tinsert");
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
-			appendStringInfoString(ctx->out, " UPDATE:");
-			if (change->data.tp.oldtuple != NULL)
-			{
-				appendStringInfoString(ctx->out, " old-key:");
-				tuple_to_stringinfo(ctx->out, tupdesc,
-									&change->data.tp.oldtuple->tuple,
-									true);
-				appendStringInfoString(ctx->out, " new-tuple:");
-			}
-
-			if (change->data.tp.newtuple == NULL)
-				appendStringInfoString(ctx->out, " (no-tuple-data)");
-			else
-				tuple_to_stringinfo(ctx->out, tupdesc,
-									&change->data.tp.newtuple->tuple,
-									false);
+			appendStringInfoString(ctx->out, "\t_action\tupdate");
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
-			appendStringInfoString(ctx->out, " DELETE:");
-
-			/* if there was no PK, we only know that a delete happened */
-			if (change->data.tp.oldtuple == NULL)
-				appendStringInfoString(ctx->out, " (no-tuple-data)");
-			/* In DELETE, only the replica identity is present; display that */
-			else
-				tuple_to_stringinfo(ctx->out, tupdesc,
-									&change->data.tp.oldtuple->tuple,
-									true);
+			appendStringInfoString(ctx->out, "\t_action\tdelete");
 			break;
-		default:
-			Assert(false);
 	}
+
+	// Output new tuple
+	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, false);
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
@@ -548,9 +490,5 @@ pg_decode_message(LogicalDecodingContext *ctx,
 				  ReorderBufferTXN *txn, XLogRecPtr lsn, bool transactional,
 				  const char *prefix, Size sz, const char *message)
 {
-	OutputPluginPrepareWrite(ctx, true);
-	appendStringInfo(ctx->out, "message: transactional: %d prefix: %s, sz: %zu content:",
-					 transactional, prefix, sz);
-	appendBinaryStringInfo(ctx->out, message, sz);
-	OutputPluginWrite(ctx, true);
+	// Ignore messages
 }
