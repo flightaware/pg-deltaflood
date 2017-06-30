@@ -62,10 +62,6 @@ static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *
 static void pg_decode_shutdown(LogicalDecodingContext *ctx);
 static void pg_decode_begin_txn(LogicalDecodingContext *ctx,
 					ReorderBufferTXN *txn);
-static void pg_output_begin(LogicalDecodingContext *ctx,
-				TestDecodingData *data,
-				ReorderBufferTXN *txn,
-				bool last_write);
 static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
 					 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 static void pg_decode_change(LogicalDecodingContext *ctx,
@@ -332,6 +328,7 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nul
 		Oid			typoutput;	/* output function */
 		bool		typisvarlena;
 		Datum		origval;	/* possibly toasted Datum */
+		char		*stringval;	/* Toasted or not, it gets converted to this. */
 		bool		isnull;		/* column is null? */
 
 		attr = tupdesc->attrs[natt];
@@ -368,7 +365,7 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nul
 
 			stringval = OidOutputFunctionCall(typoutput, PointerGetDatum(PG_DETOAST_DATUM(origval)));
 		} else {
-			stringval = OidOutputFunctionCall(typoutput, origval));
+			stringval = OidOutputFunctionCall(typoutput, origval);
 		}
 
 		appendStringInfoChar(s, '\t');
@@ -419,8 +416,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 #endif
 
 	// Output \t_xid\t$xid
-	appendStringInfoString(ctx->out, "\t_xid\t");
-	appendInteger(ctx->out, txn->xid);
+	appendStringInfoString(ctx->out, "\t_xid");
+	appendStringInfo(ctx->out, "\t%d", txn->xid);
 
 	// Output \t_action\t$action
 	switch (change->action) {
@@ -432,6 +429,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
 			appendStringInfoString(ctx->out, "\t_action\tdelete");
+			break;
+		default:
 			break;
 	}
 
