@@ -289,60 +289,31 @@ pg_decode_filter(LogicalDecodingContext *ctx,
 }
 
 /*
- * Print literal `outputstr' already represented as string of type `typid'
- * into stringbuf `s'.
- *
- * Some builtin types aren't quoted, the rest is quoted. Escaping is done as
- * if standard_conforming_strings were enabled.
+ * Print literal `outputstr' already represented as string,
+ * into stringbuf `s'. Replace tabs with "\t", newlines with "\n", other binary with "\xxx".
  */
 static void
-print_literal(StringInfo s, Oid typid, char *outputstr)
+appendField(StringInfo s, char *outputstr)
 {
 	const char *valptr;
 
-	switch (typid)
+	for (valptr = outputstr; *valptr; valptr++)
 	{
-		case INT2OID:
-		case INT4OID:
-		case INT8OID:
-		case OIDOID:
-		case FLOAT4OID:
-		case FLOAT8OID:
-		case NUMERICOID:
-			/* NB: We don't care about Inf, NaN et al. */
-			appendStringInfoString(s, outputstr);
-			break;
-
-		case BITOID:
-		case VARBITOID:
-			appendStringInfo(s, "B'%s'", outputstr);
-			break;
-
-		case BOOLOID:
-			if (strcmp(outputstr, "t") == 0)
-				appendStringInfoString(s, "true");
-			else
-				appendStringInfoString(s, "false");
-			break;
-
-		default:
-			appendStringInfoChar(s, '\'');
-			for (valptr = outputstr; *valptr; valptr++)
-			{
-				char		ch = *valptr;
-
-				if (SQL_STR_DOUBLE(ch, false))
-					appendStringInfoChar(s, ch);
-				appendStringInfoChar(s, ch);
-			}
-			appendStringInfoChar(s, '\'');
-			break;
+		char		ch = *valptr;
+		if(ch == '\t')
+			appendStringInfoString(s, "\\t");
+		else if(ch == '\n')
+			appendStringInfoString(s, "\\n");
+		else if(ch < ' ')
+			appendStringInfo(s, "\\%03o", ch);
+		else
+			appendStringInfoChar(s, ch);
 	}
 }
 
 /* print the tuple 'tuple' into the StringInfo s */
 static void
-tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nulls)
+appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nulls)
 {
 	int			natt;
 	Oid			oid;
@@ -350,7 +321,7 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_
 	/* print oid of tuple, it's not included in the TupleDesc */
 	if ((oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
 	{
-		appendStringInfo(s, " oid[oid]:%u", oid);
+		appendStringInfo(s, "\t_oid\t%u", oid);
 	}
 
 	/* print all columns individually */
@@ -387,37 +358,23 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_
 		if (isnull && skip_nulls)
 			continue;
 
-		/* print attribute name */
-		appendStringInfoChar(s, ' ');
-		appendStringInfoString(s, quote_identifier(NameStr(attr->attname)));
-
-		/* print attribute type */
-		appendStringInfoChar(s, '[');
-		appendStringInfoString(s, format_type_be(typid));
-		appendStringInfoChar(s, ']');
-
 		/* query output function */
-		getTypeOutputInfo(typid,
-						  &typoutput, &typisvarlena);
+		getTypeOutputInfo(typid, &typoutput, &typisvarlena);
 
-		/* print separator */
-		appendStringInfoChar(s, ':');
+		if (typisvarlena) {
+			/* Skip weird data */
+			if (VARATT_IS_EXTERNAL_ONDISK(origval))
+				continue;
 
-		/* print data */
-		if (isnull)
-			appendStringInfoString(s, "null");
-		else if (typisvarlena && VARATT_IS_EXTERNAL_ONDISK(origval))
-			appendStringInfoString(s, "unchanged-toast-datum");
-		else if (!typisvarlena)
-			print_literal(s, typid,
-						  OidOutputFunctionCall(typoutput, origval));
-		else
-		{
-			Datum		val;	/* definitely detoasted Datum */
-
-			val = PointerGetDatum(PG_DETOAST_DATUM(origval));
-			print_literal(s, typid, OidOutputFunctionCall(typoutput, val));
+			stringval = OidOutputFunctionCall(typoutput, PointerGetDatum(PG_DETOAST_DATUM(origval)));
+		} else {
+			stringval = OidOutputFunctionCall(typoutput, origval));
 		}
+
+		appendStringInfoChar(s, '\t');
+		appendField(s, NameStr(attr->attname));
+		appendStringInfoChar(s, '\t');
+		appendField(s, stringval);
 	}
 }
 
