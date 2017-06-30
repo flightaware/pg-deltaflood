@@ -102,8 +102,10 @@ static int nlcheckname(namelist *node, char *name)
 static void nlfree(namelist *node)
 {
 	while(node) {
-		pfree(node->name);
-		node = node->next;
+		namelist *next = node->next;
+		if(node->name) pfree(node->name);
+		pfree(node);
+		node = next;
 	}
 }
 
