@@ -50,12 +50,12 @@ typedef struct
 {
 	MemoryContext context;
 	bool		include_xids;
-	bool		include_timestamp;
-	bool		skip_empty_xacts;
-	bool		xact_wrote_changes;
+	bool		include_oids;
+	bool		full_name;
+	bool		skip_nulls;
 	bool		only_local;
 	namelist	*table_list;
-} TestDecodingData;
+} TSVstreamerData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				  bool is_init);
@@ -133,15 +133,16 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
 	ListCell   *option;
-	TestDecodingData *data;
+	TSVstreamerData *data;
 
-	data = palloc0(sizeof(TestDecodingData));
+	data = palloc0(sizeof(TSVstreamerData));
 	data->context = AllocSetContextCreate(ctx->context,
 										  "text conversion context",
 										  ALLOCSET_DEFAULT_SIZES);
 	data->include_xids = true;
-	data->include_timestamp = false;
-	data->skip_empty_xacts = false;
+	data->include_oids = true;
+	data->full_name = false;
+	data->skip_nulls = true;
 	data->only_local = false;
 	data->table_list = NULL;
 
@@ -166,37 +167,34 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
-		else if (strcmp(elem->defname, "include-timestamp") == 0)
+		else if (strcmp(elem->defname, "skip-nulls") == 0)
 		{
+			/* if option does not provide a value, it means its value is true */
 			if (elem->arg == NULL)
-				data->include_timestamp = true;
-			else if (!parse_bool(strVal(elem->arg), &data->include_timestamp))
+				data->skip_nulls = true;
+			else if (!parse_bool(strVal(elem->arg), &data->skip_nulls))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
-		else if (strcmp(elem->defname, "force-binary") == 0)
+		else if (strcmp(elem->defname, "full-name") == 0)
 		{
-			bool		force_binary;
-
+			/* if option does not provide a value, it means its value is true */
 			if (elem->arg == NULL)
-				continue;
-			else if (!parse_bool(strVal(elem->arg), &force_binary))
+				data->full_name = true;
+			else if (!parse_bool(strVal(elem->arg), &data->full_name))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
-
-			if (force_binary)
-				opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
 		}
-		else if (strcmp(elem->defname, "skip-empty-xacts") == 0)
+		else if (strcmp(elem->defname, "include-oids") == 0)
 		{
-
+			/* if option does not provide a value, it means its value is true */
 			if (elem->arg == NULL)
-				data->skip_empty_xacts = true;
-			else if (!parse_bool(strVal(elem->arg), &data->skip_empty_xacts))
+				data->include_oids = true;
+			else if (!parse_bool(strVal(elem->arg), &data->include_oids))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
@@ -248,7 +246,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 static void
 pg_decode_shutdown(LogicalDecodingContext *ctx)
 {
-	TestDecodingData *data = ctx->output_plugin_private;
+	TSVstreamerData *data = ctx->output_plugin_private;
 
 	/* clean up the table list (TODO: can I make this part of the memory context? Probably not, it gets reset after every line) */
 	nlfree(data->table_list);
@@ -262,7 +260,6 @@ static void
 pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
 	// Ignore BEGIN.
-	return;
 }
 
 /* COMMIT callback */
@@ -277,7 +274,7 @@ static bool
 pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id)
 {
-	TestDecodingData *data = ctx->output_plugin_private;
+	TSVstreamerData *data = ctx->output_plugin_private;
 
 	if (data->only_local && origin_id != InvalidRepOriginId)
 		return true;
@@ -285,8 +282,9 @@ pg_decode_filter(LogicalDecodingContext *ctx,
 }
 
 /*
- * Print literal `outputstr' already represented as string,
- * into stringbuf `s'. Replace tabs with "\t", newlines with "\n", other binary with "\xxx".
+ * Append literal `outputstr' already represented as string into stringbuf `s'.
+ *
+ * Replace tabs with "\t", newlines with "\n", other binary with "\xxx".
  */
 static void
 appendField(StringInfo s, char *outputstr)
@@ -309,13 +307,13 @@ appendField(StringInfo s, char *outputstr)
 
 /* print the tuple 'tuple' into the StringInfo s */
 static void
-appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nulls)
+appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nulls, bool include_oids)
 {
 	int			natt;
 	Oid			oid;
 
 	/* print oid of tuple, it's not included in the TupleDesc */
-	if ((oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
+	if (include_oids && (oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
 	{
 		appendStringInfo(s, "\t_oid\t%u", oid);
 	}
@@ -352,20 +350,24 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nul
 		/* get Datum from tuple */
 		origval = heap_getattr(tuple, natt + 1, tupdesc, &isnull);
 
-		if (isnull && skip_nulls)
-			continue;
-
-		/* query output function */
-		getTypeOutputInfo(typid, &typoutput, &typisvarlena);
-
-		if (typisvarlena) {
-			/* Skip weird data */
-			if (VARATT_IS_EXTERNAL_ONDISK(origval))
+		if (isnull) {
+			if(skip_nulls)
 				continue;
 
-			stringval = OidOutputFunctionCall(typoutput, PointerGetDatum(PG_DETOAST_DATUM(origval)));
+			stringval = "NULL";
 		} else {
-			stringval = OidOutputFunctionCall(typoutput, origval);
+			/* query output function */
+			getTypeOutputInfo(typid, &typoutput, &typisvarlena);
+
+			if (typisvarlena) {
+				/* Skip weird data */
+				if (VARATT_IS_EXTERNAL_ONDISK(origval))
+					continue;
+
+				stringval = OidOutputFunctionCall(typoutput, PointerGetDatum(PG_DETOAST_DATUM(origval)));
+			} else {
+				stringval = OidOutputFunctionCall(typoutput, origval);
+			}
 		}
 
 		appendStringInfoChar(s, '\t');
@@ -382,7 +384,7 @@ static void
 pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
-	TestDecodingData *data;
+	TSVstreamerData *data;
 	Form_pg_class class_form;
 	TupleDesc	tupdesc;
 	MemoryContext old;
@@ -410,14 +412,16 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	// Output _table_name\t$table_name
 	appendStringInfoString(ctx->out, "_table\t");
 	appendStringInfoString(ctx->out, table_name);
-#ifdef FULLTABLENAME
-	appendStringInfoString(ctx->out, "\t_qualified_table\t");
-	appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
-#endif
+	if(data->full_name) {
+		appendStringInfoString(ctx->out, "\t_qualified_table\t");
+		appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
+	}
 
 	// Output \t_xid\t$xid
-	appendStringInfoString(ctx->out, "\t_xid");
-	appendStringInfo(ctx->out, "\t%d", txn->xid);
+	if(data->include_xids) {
+		appendStringInfoString(ctx->out, "\t_xid");
+		appendStringInfo(ctx->out, "\t%d", txn->xid);
+	}
 
 	// Output \t_action\t$action
 	switch (change->action) {
@@ -435,7 +439,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 
 	// Output new tuple
-	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, false);
+	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, data->skip_nulls, data->include_oids);
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
