@@ -55,6 +55,9 @@ typedef struct
 	bool		skip_nulls;
 	bool		only_local;
 	namelist	*table_list;
+	char		*null_string;
+	char		*sep_string;
+	bool		escape_chars;
 } TSVstreamerData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
@@ -145,6 +148,9 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->skip_nulls = true;
 	data->only_local = false;
 	data->table_list = NULL;
+	data->null_string = NULL;
+	data->sep_string = NULL;
+	data->escape_chars = true;
 
 	ctx->output_plugin_private = data;
 
@@ -173,6 +179,17 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 			if (elem->arg == NULL)
 				data->skip_nulls = true;
 			else if (!parse_bool(strVal(elem->arg), &data->skip_nulls))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+								strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "escape-chars") == 0)
+		{
+			/* if option does not provide a value, it means its value is true */
+			if (elem->arg == NULL)
+				data->escape_chars = true;
+			else if (!parse_bool(strVal(elem->arg), &data->escape_chars))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
@@ -211,12 +228,32 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
+		else if (strcmp(elem->defname, "separator") == 0)
+		{
+			if(elem->arg == NULL)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("missing value for parameter \"%s\"",
+								elem->defname)));
+			else
+				data->sep_string = pstrdup(strVal(elem->arg));
+		}
+		else if (strcmp(elem->defname, "null") == 0)
+		{
+			if(elem->arg == NULL)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("missing value for parameter \"%s\"",
+								elem->defname)));
+			else
+				data->null_string = pstrdup(strVal(elem->arg));
+		}
 		else if (strcmp(elem->defname, "tables") == 0)
 		{
 			if(elem->arg == NULL)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("missing table_list for parameter \"%s\"",
+						 errmsg("missing value for parameter \"%s\"",
 								elem->defname)));
 			else {
 				namelist *table_list = NULL;
@@ -248,8 +285,17 @@ pg_decode_shutdown(LogicalDecodingContext *ctx)
 {
 	TSVstreamerData *data = ctx->output_plugin_private;
 
-	/* clean up the table list (TODO: can I make this part of the memory context? Probably not, it gets reset after every line) */
+	/* clean up configuration resources */
 	nlfree(data->table_list);
+	data->table_list = NULL;
+	if(data->null_string) {
+		pfree(data->null_string);
+		data->null_string = NULL;
+	}
+	if(data->sep_string) {
+		pfree(data->sep_string);
+		data->sep_string = NULL;
+	}
 
 	/* cleanup our own resources via memory context reset */
 	MemoryContextDelete(data->context);
@@ -287,7 +333,7 @@ pg_decode_filter(LogicalDecodingContext *ctx,
  * Replace tabs with "\t", newlines with "\n", other binary with "\xxx".
  */
 static void
-appendField(StringInfo s, char *outputstr)
+appendStringEscaped(StringInfo s, char *outputstr)
 {
 	const char *valptr;
 
@@ -311,11 +357,12 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, TSVstreamerDa
 {
 	int			natt;
 	Oid			oid;
+	char *sep_string = data->sep_string ? data->sep_string : "\t";
 
 	/* print oid of tuple, it's not included in the TupleDesc */
 	if (data->include_oids && (oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
 	{
-		appendStringInfo(s, "\t_oid\t%u", oid);
+		appendStringInfo(s, "%s_oid%s%u", sep_string, sep_string, oid);
 	}
 
 	/* print all columns individually */
@@ -354,7 +401,7 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, TSVstreamerDa
 			if(data->skip_nulls)
 				continue;
 
-			stringval = "NULL";
+			stringval = data->null_string ? data->null_string : "NULL";
 		} else {
 			/* query output function */
 			getTypeOutputInfo(typid, &typoutput, &typisvarlena);
@@ -370,10 +417,17 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, TSVstreamerDa
 			}
 		}
 
-		appendStringInfoChar(s, '\t');
-		appendField(s, NameStr(attr->attname));
-		appendStringInfoChar(s, '\t');
-		appendField(s, stringval);
+		appendStringInfoString(s, sep_string);
+		if(data->escape_chars)
+			appendStringEscaped(s, NameStr(attr->attname));
+		else
+			appendStringInfoString(s, NameStr(attr->attname));
+
+		appendStringInfoString(s, sep_string);
+		if(data->escape_chars)
+			appendStringEscaped(s, stringval);
+		else
+			appendStringInfoString(s, stringval);
 	}
 }
 
@@ -389,6 +443,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	TupleDesc	tupdesc;
 	MemoryContext old;
 	char *table_name;
+	char *sep_string;
 
 	data = ctx->output_plugin_private;
 	class_form = RelationGetForm(relation);
@@ -409,30 +464,32 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 
+	sep_string = data->sep_string ? data->sep_string : "\t";
+
 	// Output _table_name\t$table_name
-	appendStringInfoString(ctx->out, "_table\t");
+	appendStringInfo(ctx->out, "_table%s", sep_string);
 	appendStringInfoString(ctx->out, table_name);
 	if(data->full_name) {
-		appendStringInfoString(ctx->out, "\t_qualified_table\t");
+		appendStringInfo(ctx->out, "%s_qualified_table%s", sep_string, sep_string);
 		appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
 	}
 
 	// Output \t_xid\t$xid
 	if(data->include_xids) {
-		appendStringInfoString(ctx->out, "\t_xid");
-		appendStringInfo(ctx->out, "\t%d", txn->xid);
+		appendStringInfo(ctx->out, "%s_xid%s", sep_string, sep_string);
+		appendStringInfo(ctx->out, "%d", txn->xid);
 	}
 
 	// Output \t_action\t$action
 	switch (change->action) {
 		case REORDER_BUFFER_CHANGE_INSERT:
-			appendStringInfoString(ctx->out, "\t_action\tinsert");
+			appendStringInfo(ctx->out, "%s_action%sinsert", sep_string, sep_string);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
-			appendStringInfoString(ctx->out, "\t_action\tupdate");
+			appendStringInfo(ctx->out, "%s_action%supdate", sep_string, sep_string);
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
-			appendStringInfoString(ctx->out, "\t_action\tdelete");
+			appendStringInfo(ctx->out, "%s_action%sdelete", sep_string, sep_string);
 			break;
 		default:
 			break;
