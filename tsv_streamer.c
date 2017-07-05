@@ -307,13 +307,13 @@ appendField(StringInfo s, char *outputstr)
 
 /* print the tuple 'tuple' into the StringInfo s */
 static void
-appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nulls, bool include_oids)
+appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, TSVstreamerData *data)
 {
 	int			natt;
 	Oid			oid;
 
 	/* print oid of tuple, it's not included in the TupleDesc */
-	if (include_oids && (oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
+	if (data->include_oids && (oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
 	{
 		appendStringInfo(s, "\t_oid\t%u", oid);
 	}
@@ -351,7 +351,7 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_nul
 		origval = heap_getattr(tuple, natt + 1, tupdesc, &isnull);
 
 		if (isnull) {
-			if(skip_nulls)
+			if(data->skip_nulls)
 				continue;
 
 			stringval = "NULL";
@@ -439,7 +439,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 
 	// Output new tuple
-	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, data->skip_nulls, data->include_oids);
+	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, data);
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
