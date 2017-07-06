@@ -30,7 +30,7 @@ Options:
 
     include _lsn pseudo_column
     
-* full=name=bool default false
+* full-name=bool default false
 
     use fully qualified table name with schema
     
