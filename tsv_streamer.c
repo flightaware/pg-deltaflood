@@ -51,6 +51,7 @@ typedef struct
 	MemoryContext context;
 	bool		include_xids;
 	bool		include_oids;
+	bool		include_lsn;
 	bool		full_name;
 	bool		skip_nulls;
 	bool		only_local;
@@ -144,6 +145,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_SIZES);
 	data->include_xids = true;
 	data->include_oids = true;
+	data->include_lsn = false;
 	data->full_name = false;
 	data->skip_nulls = true;
 	data->only_local = false;
@@ -212,6 +214,17 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 			if (elem->arg == NULL)
 				data->include_oids = true;
 			else if (!parse_bool(strVal(elem->arg), &data->include_oids))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+								strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "include-lsn") == 0)
+		{
+			/* if option does not provide a value, it means its value is true */
+			if (elem->arg == NULL)
+				data->include_lsn = true;
+			else if (!parse_bool(strVal(elem->arg), &data->include_lsn))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
@@ -474,11 +487,11 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
 	}
 
-	// Output \t_xid\t$xid
-	if(data->include_xids) {
-		appendStringInfo(ctx->out, "%s_xid%s", sep_string, sep_string);
-		appendStringInfo(ctx->out, "%d", txn->xid);
-	}
+	if(data->include_xids)
+		appendStringInfo(ctx->out, "%s_xid%s%d", sep_string, sep_string, txn->xid);
+
+	if(data->include_lsn)
+		appendStringInfo(ctx->out, "%s_lsn%s%lX", sep_string, sep_string, (uint64)txn->restart_decoding_lsn);
 
 	// Output \t_action\t$action
 	switch (change->action) {
