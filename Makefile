@@ -26,7 +26,9 @@ installcheck:;
 # installation, allow to do so, but only if requested explicitly.
 installcheck-force: regresscheck-install-force isolationcheck-install-force
 
-check: regresscheck isolationcheck
+# Disabled because there's no tests for tsv_streamer
+check:;
+#check: regresscheck isolationcheck
 
 submake-regress:
 	$(MAKE) -C $(top_builddir)/src/test/regress all
