@@ -490,8 +490,10 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	if(data->include_xids)
 		appendStringInfo(ctx->out, "%s_xid%s%d", sep_string, sep_string, txn->xid);
 
-	if(data->include_lsn)
-		appendStringInfo(ctx->out, "%s_lsn%s%lX", sep_string, sep_string, (uint64)txn->restart_decoding_lsn);
+	if(data->include_lsn) {
+		uint64 lsn = txn->restart_decoding_lsn;
+		appendStringInfo(ctx->out, "%s_lsn%s%lX/%lX", sep_string, sep_string, ((lsn >> 32) & 0xFFFFFFFF), (lsn & 0xFFFFFFFF) );
+	}
 
 	// Output \t_action\t$action
 	switch (change->action) {
