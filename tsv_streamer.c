@@ -459,8 +459,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	char *sep_string;
 	ReorderBufferTupleBuf *tuple;
 
-	data = ctx->output_plugin_private;
-	class_form = RelationGetForm(relation);
+	// delete doesn't have a "new tuple" so use the old one for that case.
 	if(change->action == REORDER_BUFFER_CHANGE_DELETE)
 		tuple = change->data.tp.oldtuple;
 	else
@@ -469,6 +468,9 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	// filter empty tuples
 	if (tuple == NULL)
 		return;
+
+	data = ctx->output_plugin_private;
+	class_form = RelationGetForm(relation);
 
 	// filter tables
 	table_name = NameStr(class_form->relname);
