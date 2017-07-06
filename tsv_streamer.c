@@ -457,12 +457,17 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext old;
 	char *table_name;
 	char *sep_string;
+	ReorderBufferTupleBuf *tuple;
 
 	data = ctx->output_plugin_private;
 	class_form = RelationGetForm(relation);
+	if(change->action == REORDER_BUFFER_CHANGE_DELETE)
+		tuple = change->data.tp.oldtuple;
+	else
+		tuple = change->data.tp.newtuple;
 
 	// filter empty tuples
-	if (change->data.tp.newtuple == NULL)
+	if (tuple == NULL)
 		return;
 
 	// filter tables
@@ -511,7 +516,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 
 	// Output new tuple
-	appendTupleAsTSV(ctx->out, tupdesc, &change->data.tp.newtuple->tuple, data);
+	appendTupleAsTSV(ctx->out, tupdesc, &tuple->tuple, data);
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
