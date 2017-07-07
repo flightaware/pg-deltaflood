@@ -1,10 +1,42 @@
+TSV_STREAMER
+============
+
+This is a PostgreSQL output plugin that provides a way to stream changes to a database in an easily parsed format for
+mirroring those changes to an external application. It is based on the "test_decoding" plugin shipped with the PostgreSQL
+distribution.
+
+The output format consists of a stream of tab-separated lines, each line containing the changes to the database, along with
+some extra pseudo-columns:
+
+* _table table_name
+* _xid (optional)
+* _oid (optional)
+* _lsn (optional)
+* _action [insert|change|delete]
+
+The "delete" actions are only output for tables with a primary key that can be used to uniquely identify deleted rows.
+
+SETUP
+-----
+
+This depends on a full copy of the postgres build tree being available. The easiest way to do this is to "git clone" the
+Postgres repo and this repo under the same common parent directory. If the postgres build tree is somewhere other than
+../postgres you will need to modify "top_builddir" in Makefile to point to it.
+
+```
+git clone git@github.com:flightaware/tsv_streamer.git
+git clone git@github.com:postgres/postgres.git
+```
+
 BUILDING
 --------
 
+After setting up the build trees for postgres and tsv_streamer next to each other:
+
 ```
-cd postgres
+cd ../postgres
 autoreconf; ./configure suitable-options
-cd contrib/tsv_streamer
+cd ../tsv_streamer
 gmake; sudo gmake install
 ```
 

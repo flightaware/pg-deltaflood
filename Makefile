@@ -13,7 +13,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
 subdir = contrib/tsv_streamer
-top_builddir = ../..
+top_builddir = ../postgres
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
