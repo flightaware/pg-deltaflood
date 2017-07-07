@@ -12,7 +12,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = contrib/tsv_streamer
+subdir = ../tsv_streamer
 top_builddir = ../postgres
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
@@ -37,7 +37,7 @@ submake-isolation:
 	$(MAKE) -C $(top_builddir)/src/test/isolation all
 
 submake-tsv_streamer:
-	$(MAKE) -C $(top_builddir)/contrib/tsv_streamer
+	$(MAKE) -C $(top_builddir)/../tsv_streamer
 
 REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
 	decoding_into_rel binary prepared replorigin time messages \
@@ -45,7 +45,7 @@ REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
 
 regresscheck: | submake-regress submake-tsv_streamer temp-install
 	$(pg_regress_check) \
-	    --temp-config $(top_srcdir)/contrib/tsv_streamer/logical.conf \
+	    --temp-config $(top_srcdir)/../tsv_streamer/logical.conf \
 	    $(REGRESSCHECKS)
 
 regresscheck-install-force: | submake-regress submake-tsv_streamer temp-install
@@ -56,7 +56,7 @@ ISOLATIONCHECKS=mxact delayed_startup ondisk_startup concurrent_ddl_dml
 
 isolationcheck: | submake-isolation submake-tsv_streamer temp-install
 	$(pg_isolation_regress_check) \
-	    --temp-config $(top_srcdir)/contrib/tsv_streamer/logical.conf \
+	    --temp-config $(top_srcdir)/../tsv_streamer/logical.conf \
 	    $(ISOLATIONCHECKS)
 
 isolationcheck-install-force: all | submake-isolation submake-tsv_streamer temp-install
@@ -67,4 +67,4 @@ isolationcheck-install-force: all | submake-isolation submake-tsv_streamer temp-
 	regresscheck regresscheck-install-force \
 	isolationcheck isolationcheck-install-force
 
-temp-install: EXTRA_INSTALL=contrib/tsv_streamer
+temp-install: EXTRA_INSTALL=../tsv_streamer
