@@ -1,7 +1,7 @@
 DELTAFLOOD
 ==========
 
-This is a PostgreSQL output plugin that provides a way to stream deltas to a database in an easily _and rapidly_parsed format for
+This is a PostgreSQL output plugin that provides a way to stream deltas to a database in an easily _and rapidly_ parsed format for
 mirroring those changes to an external application. It is based on the "test_decoding" plugin shipped with the PostgreSQL
 distribution.
 
