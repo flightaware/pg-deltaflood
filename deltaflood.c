@@ -1,13 +1,13 @@
 /*-------------------------------------------------------------------------
  *
- * tsv_streamer.c
+ * deltaflood.c
  *		  stream specific tables as TSV files in name-value format
  *		  Based on contributed example logical decoding output plugin
  *
  * Copyright (c) 2012-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  contrib/tsv_streamer/tsv_streamer.c
+ *		  contrib/deltaflood/deltaflood.c
  *
  *-------------------------------------------------------------------------
  */
@@ -59,7 +59,7 @@ typedef struct
 	char		*null_string;
 	char		*sep_string;
 	bool		escape_chars;
-} TSVstreamerData;
+} DeltaFloodData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				  bool is_init);
@@ -137,9 +137,9 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
 	ListCell   *option;
-	TSVstreamerData *data;
+	DeltaFloodData *data;
 
-	data = palloc0(sizeof(TSVstreamerData));
+	data = palloc0(sizeof(DeltaFloodData));
 	data->context = AllocSetContextCreate(ctx->context,
 										  "text conversion context",
 										  ALLOCSET_DEFAULT_SIZES);
@@ -296,7 +296,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 static void
 pg_decode_shutdown(LogicalDecodingContext *ctx)
 {
-	TSVstreamerData *data = ctx->output_plugin_private;
+	DeltaFloodData *data = ctx->output_plugin_private;
 
 	/* clean up configuration resources */
 	nlfree(data->table_list);
@@ -333,7 +333,7 @@ static bool
 pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id)
 {
-	TSVstreamerData *data = ctx->output_plugin_private;
+	DeltaFloodData *data = ctx->output_plugin_private;
 
 	if (data->only_local && origin_id != InvalidRepOriginId)
 		return true;
@@ -366,7 +366,7 @@ appendStringEscaped(StringInfo s, char *outputstr)
 
 /* print the tuple 'tuple' into the StringInfo s */
 static void
-appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, TSVstreamerData *data)
+appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodData *data)
 {
 	int			natt;
 	Oid			oid;
@@ -451,7 +451,7 @@ static void
 pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
-	TSVstreamerData *data;
+	DeltaFloodData *data;
 	Form_pg_class class_form;
 	TupleDesc	tupdesc;
 	MemoryContext old;

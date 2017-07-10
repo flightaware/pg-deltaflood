@@ -1,7 +1,7 @@
-# contrib/tsv_streamer/Makefile
+# contrib/deltaflood/Makefile
 
-MODULES = tsv_streamer
-PGFILEDESC = "tsv_streamer - stream specific tables into TSV format""
+MODULES = deltaflood
+PGFILEDESC = "deltaflood - stream specific tables into TSV format"
 
 # Note: because we don't tell the Makefile there are any regression tests,
 # we have to clean those result files explicitly
@@ -12,7 +12,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = ../tsv_streamer
+subdir = ../deltaflood
 top_builddir = ../postgres
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
@@ -26,7 +26,7 @@ installcheck:;
 # installation, allow to do so, but only if requested explicitly.
 installcheck-force: regresscheck-install-force isolationcheck-install-force
 
-# Disabled because there's no tests for tsv_streamer
+# Disabled because there's no tests for deltaflood
 check:;
 #check: regresscheck isolationcheck
 
@@ -36,35 +36,35 @@ submake-regress:
 submake-isolation:
 	$(MAKE) -C $(top_builddir)/src/test/isolation all
 
-submake-tsv_streamer:
-	$(MAKE) -C $(top_builddir)/../tsv_streamer
+submake-deltaflood:
+	$(MAKE) -C $(top_builddir)/../deltaflood
 
 REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
 	decoding_into_rel binary prepared replorigin time messages \
 	spill slot
 
-regresscheck: | submake-regress submake-tsv_streamer temp-install
+regresscheck: | submake-regress submake-deltaflood temp-install
 	$(pg_regress_check) \
-	    --temp-config $(top_srcdir)/../tsv_streamer/logical.conf \
+	    --temp-config $(top_srcdir)/../deltaflood/logical.conf \
 	    $(REGRESSCHECKS)
 
-regresscheck-install-force: | submake-regress submake-tsv_streamer temp-install
+regresscheck-install-force: | submake-regress submake-deltaflood temp-install
 	$(pg_regress_installcheck) \
 	    $(REGRESSCHECKS)
 
 ISOLATIONCHECKS=mxact delayed_startup ondisk_startup concurrent_ddl_dml
 
-isolationcheck: | submake-isolation submake-tsv_streamer temp-install
+isolationcheck: | submake-isolation submake-deltaflood temp-install
 	$(pg_isolation_regress_check) \
-	    --temp-config $(top_srcdir)/../tsv_streamer/logical.conf \
+	    --temp-config $(top_srcdir)/../deltaflood/logical.conf \
 	    $(ISOLATIONCHECKS)
 
-isolationcheck-install-force: all | submake-isolation submake-tsv_streamer temp-install
+isolationcheck-install-force: all | submake-isolation submake-deltaflood temp-install
 	$(pg_isolation_regress_installcheck) \
 	    $(ISOLATIONCHECKS)
 
-.PHONY: submake-tsv_streamer submake-regress check \
+.PHONY: submake-deltaflood submake-regress check \
 	regresscheck regresscheck-install-force \
 	isolationcheck isolationcheck-install-force
 
-temp-install: EXTRA_INSTALL=../tsv_streamer
+temp-install: EXTRA_INSTALL=../deltaflood

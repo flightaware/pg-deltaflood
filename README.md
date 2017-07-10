@@ -1,7 +1,7 @@
-TSV_STREAMER
-============
+DELTAFLOOD
+==========
 
-This is a PostgreSQL output plugin that provides a way to stream changes to a database in an easily parsed format for
+This is a PostgreSQL output plugin that provides a way to stream deltas to a database in an easily _and rapidly_parsed format for
 mirroring those changes to an external application. It is based on the "test_decoding" plugin shipped with the PostgreSQL
 distribution.
 
@@ -24,19 +24,19 @@ Postgres repo and this repo under the same common parent directory. If the postg
 ../postgres you will need to modify "top_builddir" in Makefile to point to it.
 
 ```
-git clone git@github.com:flightaware/tsv_streamer.git
+git clone git@github.com:flightaware/deltaflood.git
 git clone git@github.com:postgres/postgres.git
 ```
 
 BUILDING
 --------
 
-After setting up the build trees for postgres and tsv_streamer next to each other:
+After setting up the build trees for postgres and deltaflood next to each other:
 
 ```
 cd ../postgres
 autoreconf; ./configure suitable-options
-cd ../tsv_streamer
+cd ../deltaflood
 gmake; sudo gmake install
 ```
 
@@ -44,7 +44,7 @@ USING
 -----
 
 ```
-pg_recvlogical --create-slot --slot streamer --plugin=tsv_streamer
+pg_recvlogical --create-slot --slot streamer --plugin=deltaflood
 pg_recvlogical --start --slot streamer --file=- -o opt=value...
 ```
 
