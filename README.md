@@ -36,6 +36,7 @@ After setting up the build trees for postgres and deltaflood next to each other:
 ```
 cd ../postgres
 autoreconf; ./configure suitable-options
+gmake
 cd ../deltaflood
 gmake; sudo gmake install
 ```
