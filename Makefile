@@ -12,7 +12,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = ../deltaflood
+subdir = ../pg-deltaflood
 top_builddir = ../postgres
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
@@ -37,7 +37,7 @@ submake-isolation:
 	$(MAKE) -C $(top_builddir)/src/test/isolation all
 
 submake-deltaflood:
-	$(MAKE) -C $(top_builddir)/../deltaflood
+	$(MAKE) -C $(top_builddir)/../pg-deltaflood
 
 REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
 	decoding_into_rel binary prepared replorigin time messages \
@@ -45,7 +45,7 @@ REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
 
 regresscheck: | submake-regress submake-deltaflood temp-install
 	$(pg_regress_check) \
-	    --temp-config $(top_srcdir)/../deltaflood/logical.conf \
+	    --temp-config $(top_srcdir)/../pg-deltaflood/logical.conf \
 	    $(REGRESSCHECKS)
 
 regresscheck-install-force: | submake-regress submake-deltaflood temp-install
@@ -56,7 +56,7 @@ ISOLATIONCHECKS=mxact delayed_startup ondisk_startup concurrent_ddl_dml
 
 isolationcheck: | submake-isolation submake-deltaflood temp-install
 	$(pg_isolation_regress_check) \
-	    --temp-config $(top_srcdir)/../deltaflood/logical.conf \
+	    --temp-config $(top_srcdir)/../pg-deltaflood/logical.conf \
 	    $(ISOLATIONCHECKS)
 
 isolationcheck-install-force: all | submake-isolation submake-deltaflood temp-install
@@ -67,4 +67,4 @@ isolationcheck-install-force: all | submake-isolation submake-deltaflood temp-in
 	regresscheck regresscheck-install-force \
 	isolationcheck isolationcheck-install-force
 
-temp-install: EXTRA_INSTALL=../deltaflood
+temp-install: EXTRA_INSTALL=../pg-deltaflood
