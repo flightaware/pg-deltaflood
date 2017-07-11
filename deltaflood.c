@@ -54,7 +54,9 @@ typedef struct
 	bool		include_lsn;
 	bool		full_name;
 	bool		skip_nulls;
+#if PG_VERSION_NUM > 90600
 	bool		only_local;
+#endif
 	namelist	*table_list;
 	char		*null_string;
 	char		*sep_string;
@@ -71,12 +73,14 @@ static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
 static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
+#if PG_VERSION_NUM > 90600
 static bool pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id);
 static void pg_decode_message(LogicalDecodingContext *ctx,
 				  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
 				  bool transactional, const char *prefix,
 				  Size sz, const char *message);
+#endif
 
 static namelist *nladdname(namelist *list, char *name);
 static int nlcheckname(namelist *node, char *name);
@@ -125,9 +129,11 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
-	cb->filter_by_origin_cb = pg_decode_filter;
 	cb->shutdown_cb = pg_decode_shutdown;
+#if PG_VERSION_NUM > 90600
+	cb->filter_by_origin_cb = pg_decode_filter;
 	cb->message_cb = pg_decode_message;
+#endif
 }
 
 
@@ -148,7 +154,9 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->include_lsn = false;
 	data->full_name = false;
 	data->skip_nulls = true;
+#if PG_VERSION_NUM > 90600
 	data->only_local = false;
+#endif
 	data->table_list = NULL;
 	data->null_string = NULL;
 	data->sep_string = NULL;
@@ -230,6 +238,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
+#if PG_VERSION_NUM > 90600
 		else if (strcmp(elem->defname, "only-local") == 0)
 		{
 
@@ -241,6 +250,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
+#endif
 		else if (strcmp(elem->defname, "separator") == 0)
 		{
 			if(elem->arg == NULL)
@@ -329,6 +339,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	// Ignore COMMIT.
 }
 
+#if PG_VERSION_NUM > 90600
 static bool
 pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id)
@@ -339,6 +350,7 @@ pg_decode_filter(LogicalDecodingContext *ctx,
 		return true;
 	return false;
 }
+#endif
 
 /*
  * Append literal `outputstr' already represented as string into stringbuf `s'.
@@ -548,6 +560,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 }
 
+#if PG_VERSION_NUM > 90600
 static void
 pg_decode_message(LogicalDecodingContext *ctx,
 				  ReorderBufferTXN *txn, XLogRecPtr lsn, bool transactional,
@@ -555,3 +568,4 @@ pg_decode_message(LogicalDecodingContext *ctx,
 {
 	// Ignore messages
 }
+#endif
