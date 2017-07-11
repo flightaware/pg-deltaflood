@@ -20,10 +20,20 @@
 
 #include "nodes/parsenodes.h"
 
+// compatibility with PG < 9.6
+#if PG_VERSION_NUM < 90600
+#define ALLOCSET_DEFAULT_SIZES \
+        ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE, ALLOCSET_DEFAULT_MAXSIZE
+#define LEGACY_API_COMPATIBILITY
+#endif
+
+
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
+#ifndef LEGACY_API_COMPATIBILITY
 #include "replication/message.h"
 #include "replication/origin.h"
+#endif
 
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -54,7 +64,7 @@ typedef struct
 	bool		include_lsn;
 	bool		full_name;
 	bool		skip_nulls;
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 	bool		only_local;
 #endif
 	namelist	*table_list;
@@ -73,7 +83,7 @@ static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
 static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 static bool pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id);
 static void pg_decode_message(LogicalDecodingContext *ctx,
@@ -130,7 +140,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
 	cb->shutdown_cb = pg_decode_shutdown;
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 	cb->filter_by_origin_cb = pg_decode_filter;
 	cb->message_cb = pg_decode_message;
 #endif
@@ -154,7 +164,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->include_lsn = false;
 	data->full_name = false;
 	data->skip_nulls = true;
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 	data->only_local = false;
 #endif
 	data->table_list = NULL;
@@ -238,7 +248,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
 		}
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 		else if (strcmp(elem->defname, "only-local") == 0)
 		{
 
@@ -339,7 +349,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	// Ignore COMMIT.
 }
 
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 static bool
 pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id)
@@ -560,7 +570,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 }
 
-#if PG_VERSION_NUM > 90600
+#ifndef LEGACY_API_COMPATIBILITY
 static void
 pg_decode_message(LogicalDecodingContext *ctx,
 				  ReorderBufferTXN *txn, XLogRecPtr lsn, bool transactional,
