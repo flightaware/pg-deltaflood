@@ -474,7 +474,6 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			}
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
-			// TODO: may want to prune this to primary key - need to figure that out
 			if(change->data.tp.oldtuple) {
 				tuples[ntuples] = change->data.tp.oldtuple;
 				actions[ntuples] = "delete";
