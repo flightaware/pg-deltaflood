@@ -12,9 +12,14 @@ some extra pseudo-columns:
 * _xid (optional)
 * _oid (optional)
 * _lsn (optional)
-* _action [insert|change|delete]
+* _action [insert|replace|update|delete]
 
 The "delete" actions are only output for tables with a primary key that can be used to uniquely identify deleted rows.
+
+Updates will be preceded by a replace line with the old primary key when appropriate. The reader can either
+treat "update" as "insert" and "replace" as "delete", or generate an update operation with an appropriate "where" clause if it's preceded by a change.
+
+You really need a primary key or OIDs if you want to usefully use this for replication. :)
 
 SETUP
 -----
@@ -43,7 +48,7 @@ After setting up the build trees for postgres and deltaflood next to each other:
 
 ```
 cd ../postgres
-autoreconf; ./configure _$suitable-options_
+autoreconf; ./configure $suitable-options
 gmake
 cd ../pg-deltaflood
 gmake; sudo gmake install

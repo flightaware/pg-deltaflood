@@ -476,7 +476,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			if(change->data.tp.oldtuple) {
 				tuples[ntuples] = change->data.tp.oldtuple;
-				actions[ntuples] = "delete";
+				actions[ntuples] = "replace";
 				ntuples++;
 			}
 			if(change->data.tp.newtuple) {
