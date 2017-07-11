@@ -457,16 +457,49 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext old;
 	char *table_name;
 	char *sep_string;
-	ReorderBufferTupleBuf *tuple;
 
-	// delete doesn't have a "new tuple" so use the old one for that case.
-	if(change->action == REORDER_BUFFER_CHANGE_DELETE)
-		tuple = change->data.tp.oldtuple;
-	else
-		tuple = change->data.tp.newtuple;
+	// May generate multiple lines
+	int ntuples;
+	ReorderBufferTupleBuf *tuples[2];
+	char *actions[2];
+	int i;
+
+	ntuples = 0;
+	switch(change->action) {
+		case REORDER_BUFFER_CHANGE_INSERT:
+			if(change->data.tp.newtuple) {
+				tuples[ntuples] = change->data.tp.newtuple;
+				actions[ntuples] = "insert";
+				ntuples++;
+			}
+			break;
+		case REORDER_BUFFER_CHANGE_UPDATE:
+			// TODO: may want to prune this to primary key - need to figure that out
+			if(change->data.tp.oldtuple) {
+				tuples[ntuples] = change->data.tp.oldtuple;
+				actions[ntuples] = "delete";
+				ntuples++;
+			}
+			if(change->data.tp.newtuple) {
+				tuples[ntuples] = change->data.tp.newtuple;
+				actions[ntuples] = "update";
+				ntuples++;
+			}
+			break;
+		case REORDER_BUFFER_CHANGE_DELETE:
+			if(change->data.tp.oldtuple) {
+				tuples[ntuples] = change->data.tp.oldtuple;
+				actions[ntuples] = "delete";
+				ntuples++;
+			}
+			break;
+		default:
+			// shouldn't happen
+			break;
+	}
 
 	// filter empty tuples
-	if (tuple == NULL)
+	if (ntuples == 0)
 		return;
 
 	data = ctx->output_plugin_private;
@@ -479,51 +512,41 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	tupdesc = RelationGetDescr(relation);
 
-	/* Avoid leaking memory by using and resetting our own context */
-	old = MemoryContextSwitchTo(data->context);
-
-	OutputPluginPrepareWrite(ctx, true);
-
 	sep_string = data->sep_string ? data->sep_string : "\t";
 
-	// Output _table_name\t$table_name
-	appendStringInfo(ctx->out, "_table%s", sep_string);
-	appendStringInfoString(ctx->out, table_name);
-	if(data->full_name) {
-		appendStringInfo(ctx->out, "%s_qualified_table%s", sep_string, sep_string);
-		appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
+	for(i = 0; i < ntuples; i++) {
+		/* Avoid leaking memory by using and resetting our own context */
+		old = MemoryContextSwitchTo(data->context);
+
+		OutputPluginPrepareWrite(ctx, true);
+
+		// Output _table_name\t$table_name
+		appendStringInfo(ctx->out, "_table%s", sep_string);
+		appendStringInfoString(ctx->out, table_name);
+		if(data->full_name) {
+			appendStringInfo(ctx->out, "%s_qualified_table%s", sep_string, sep_string);
+			appendStringInfoString(ctx->out, quote_qualified_identifier( get_namespace_name( get_rel_namespace(RelationGetRelid(relation))), table_name));
+		}
+
+		if(data->include_xids)
+			appendStringInfo(ctx->out, "%s_xid%s%d", sep_string, sep_string, txn->xid);
+
+		if(data->include_lsn) {
+			uint64 lsn = txn->restart_decoding_lsn;
+			appendStringInfo(ctx->out, "%s_lsn%s%lX/%lX", sep_string, sep_string, ((lsn >> 32) & 0xFFFFFFFF), (lsn & 0xFFFFFFFF) );
+		}
+
+		// Output \t_action\t$action
+		appendStringInfo(ctx->out, "%s_action%s%s", sep_string, sep_string, actions[i]);
+
+		// Output new tuple
+		appendTupleAsTSV(ctx->out, tupdesc, &tuples[i]->tuple, data);
+
+		MemoryContextSwitchTo(old);
+		MemoryContextReset(data->context);
+
+		OutputPluginWrite(ctx, true);
 	}
-
-	if(data->include_xids)
-		appendStringInfo(ctx->out, "%s_xid%s%d", sep_string, sep_string, txn->xid);
-
-	if(data->include_lsn) {
-		uint64 lsn = txn->restart_decoding_lsn;
-		appendStringInfo(ctx->out, "%s_lsn%s%lX/%lX", sep_string, sep_string, ((lsn >> 32) & 0xFFFFFFFF), (lsn & 0xFFFFFFFF) );
-	}
-
-	// Output \t_action\t$action
-	switch (change->action) {
-		case REORDER_BUFFER_CHANGE_INSERT:
-			appendStringInfo(ctx->out, "%s_action%sinsert", sep_string, sep_string);
-			break;
-		case REORDER_BUFFER_CHANGE_UPDATE:
-			appendStringInfo(ctx->out, "%s_action%supdate", sep_string, sep_string);
-			break;
-		case REORDER_BUFFER_CHANGE_DELETE:
-			appendStringInfo(ctx->out, "%s_action%sdelete", sep_string, sep_string);
-			break;
-		default:
-			break;
-	}
-
-	// Output new tuple
-	appendTupleAsTSV(ctx->out, tupdesc, &tuple->tuple, data);
-
-	MemoryContextSwitchTo(old);
-	MemoryContextReset(data->context);
-
-	OutputPluginWrite(ctx, true);
 }
 
 static void

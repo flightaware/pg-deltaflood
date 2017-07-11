@@ -24,9 +24,17 @@ Postgres repo and this repo under the same common parent directory. If the postg
 ../postgres you will need to modify "top_builddir" in Makefile to point to it.
 
 ```
-git clone git@github.com:flightaware/deltaflood.git
+git clone git@github.com:flightaware/pg-deltaflood.git
 git clone git@github.com:postgres/postgres.git
 ```
+
+Or
+
+```
+git clone https://github.com/flightaware/pg-deltaflood.git
+git clone https://github.com/postgres/postgres.git
+```
+
 
 BUILDING
 --------
@@ -35,9 +43,9 @@ After setting up the build trees for postgres and deltaflood next to each other:
 
 ```
 cd ../postgres
-autoreconf; ./configure suitable-options
+autoreconf; ./configure _$suitable-options_
 gmake
-cd ../deltaflood
+cd ../pg-deltaflood
 gmake; sudo gmake install
 ```
 
