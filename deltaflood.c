@@ -22,6 +22,7 @@
 
 // compatibility with PG < 9.6
 #if PG_VERSION_NUM < 90600
+// Added after 2016-08 per https://www.postgresql.org/message-id/21072.1472321324%40sss.pgh.pa.us
 #define ALLOCSET_DEFAULT_SIZES \
         ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE, ALLOCSET_DEFAULT_MAXSIZE
 #define LEGACY_API_COMPATIBILITY
