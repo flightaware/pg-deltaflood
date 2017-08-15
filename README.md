@@ -19,10 +19,12 @@ The "delete" actions are only output for tables with a primary key that can be u
 Updates will be preceded by a replace line with the old primary key when appropriate. The reader can either
 treat "update" as "insert" and "replace" as "delete", or generate an update operation with an appropriate "where" clause if it's preceded by a change.
 
-You really need a primary key or OIDs if you want to usefully use this for replication. :)
+You really need a primary key or OIDs (oh, hey, that's a primary key) if you want to usefully use this for replication. :)
 
 SETUP
 -----
+
+deltaflood now uses PGXN so you only need to follow the following instructions for PostgreSQL <= 8.1 and why would you do that?
 
 This depends on a full copy of the postgres build tree being available. The easiest way to do this is to "git clone" the
 Postgres repo and this repo under the same common parent directory. If the postgres build tree is somewhere other than
@@ -44,6 +46,10 @@ git clone https://github.com/postgres/postgres.git
 BUILDING
 --------
 
+With current versions of Postgres, if you have it properly set up so `pg_config --pgxs` returns something like `/usr/local/lib/postgresql/pgxs/src/makefiles/pgxs.mk`, just "gmake; gmake install"
+
+With PostgreSQL <= 8.1:
+
 After setting up the build trees for postgres and deltaflood next to each other:
 
 ```
@@ -51,7 +57,7 @@ cd ../postgres
 autoreconf; ./configure $suitable-options
 gmake
 cd ../pg-deltaflood
-gmake; sudo gmake install
+gmake NO_PGXS=1; sudo gmake NO_PGXS=1 install
 ```
 
 USING
