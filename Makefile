@@ -7,15 +7,17 @@ PGFILEDESC = "deltaflood - stream specific tables into TSV format"
 # we have to clean those result files explicitly
 EXTRA_CLEAN = $(pg_regress_clean_files)
 
-ifdef USE_PGXS
-PG_CONFIG = pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
-else
+# Only set this if you're building for PostgreSQL 8.1 or earlier.
+# See http://blog.pgxn.org/post/20908326485/lose-use-pgxs
+ifdef NO_PGXS
 subdir = ../pg-deltaflood
 top_builddir = ../postgres
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
+else
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
 endif
 
 # Disabled because these tests require "wal_level=logical", which
