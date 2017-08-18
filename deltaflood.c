@@ -367,6 +367,7 @@ pg_decode_filter(LogicalDecodingContext *ctx,
  * Append literal `outputstr' already represented as string into stringbuf `s'.
  *
  * Replace tabs with "\t", newlines with "\n", other binary with "\xxx".
+ * also "\" with "\\" to make de-escaping possible
  */
 static void
 appendStringEscaped(StringInfo s, char *outputstr)
@@ -380,6 +381,8 @@ appendStringEscaped(StringInfo s, char *outputstr)
 			appendStringInfoString(s, "\\t");
 		else if(ch == '\n')
 			appendStringInfoString(s, "\\n");
+		else if(ch == '\\')
+			appendStringInfoString(s, "\\\\");
 		else if(ch < ' ')
 			appendStringInfo(s, "\\%03o", ch);
 		else
