@@ -72,6 +72,7 @@ typedef struct
 	char		*null_string;
 	char		*sep_string;
 	bool		escape_chars;
+	bool		convert_bool;
 } DeltaFloodData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
@@ -172,6 +173,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->null_string = NULL;
 	data->sep_string = NULL;
 	data->escape_chars = true;
+	data->convert_bool = true;
 
 	ctx->output_plugin_private = data;
 
@@ -211,6 +213,17 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 			if (elem->arg == NULL)
 				data->escape_chars = true;
 			else if (!parse_bool(strVal(elem->arg), &data->escape_chars))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+								strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "convert-bool") == 0)
+		{
+			/* if option does not provide a value, it means its value is true */
+			if (elem->arg == NULL)
+				data->convert_bool = true;
+			else if (!parse_bool(strVal(elem->arg), &data->convert_bool))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
@@ -390,6 +403,39 @@ appendStringEscaped(StringInfo s, char *outputstr)
 	}
 }
 
+/*
+ * Ternary test for a boolean value, true (1), false (0), unknown (-1);
+ */
+static int
+stringIsBooleanAndValue(char *stringval) {
+	int i = stringval[0] == '\'';
+
+	/*
+	 * This may be more complex than necessary, but PostgreSQL lists a number of options
+	 * for true and false values.
+	 */
+	switch(stringval[i]) {
+		// 1, t, true, yes
+		case '1': case 't': case 'y': return 1;
+		// 0, f, false, no
+		case '0': case 'f': case 'n': return 0;
+		// on, off
+		case 'o': {
+			if(stringval[i+1] == 'n') {
+				return 1;
+			} else if(stringval[i+1] == 'f') {
+				return 0;
+			}
+			break;
+		}
+		default: {
+			// If I don't recognise the boolean, fall through
+			break;
+		}
+	}
+	return -1;
+}
+
 /* print the tuple 'tuple' into the StringInfo s */
 static void
 appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodData *data)
@@ -414,6 +460,8 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 		Datum		origval;	/* possibly toasted Datum */
 		char		*stringval;	/* Toasted or not, it gets converted to this. */
 		bool		isnull;		/* column is null? */
+		static int      bool_typid = -1;
+		bool            isbool = 0;
 
 		attr = tupdesc->attrs[natt];
 
@@ -432,6 +480,8 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 			continue;
 
 		typid = attr->atttypid;
+
+		// DEBUG // appendStringInfo(s, "%stypid[%s]=%s%ld", sep_string, format_type_be(typid), sep_string, (long)typid);
 
 		/* get Datum from tuple */
 		origval = heap_getattr(tuple, natt + 1, tupdesc, &isnull);
@@ -453,6 +503,24 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 				stringval = OidOutputFunctionCall(typoutput, PointerGetDatum(PG_DETOAST_DATUM(origval)));
 			} else {
 				stringval = OidOutputFunctionCall(typoutput, origval);
+			}
+
+			if(data->convert_bool) {
+				// simple cache for boolean type-id to avoid unnecessary calls to format_type_be
+				if(bool_typid == -1)
+					if(strcmp(format_type_be(typid), "boolean") == 0)
+						bool_typid = typid;
+
+				if(bool_typid != -1 && bool_typid == typid)
+					isbool = 1;
+
+				if(isbool) {
+					switch (stringIsBooleanAndValue(stringval)) {
+						case -1: break; // can't tell
+						case 0: stringval = "0"; break; // false
+						case 1: stringval = "1"; break; // true
+					}
+				}
 			}
 		}
 

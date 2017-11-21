@@ -72,15 +72,15 @@ Options:
 
 * include-xids=bool default true
 
-    include _xid pseudo-column
+    include _xid (Transaction ID) pseudo-column
     
 * include-oids=bool default true
 
-    include _oid pseudo_column
+    include _oid (object ID) pseudo_column
     
-* include-lsn=bool default true
+* include-lsn=bool default false
 
-    include _lsn pseudo_column
+    include _lsn (Logical Serial Number) pseudo_column
     
 * full-name=bool default false
 
@@ -94,6 +94,10 @@ Options:
 
     escape tab as \t, newline as \n, other control characters as \NNN in octal
     
+* convert-bool=bool default true
+
+    convert boolean values to "1" or "0" regardless of original representation
+
 * null=null_string default NULL
 
     if skip-nulls=false, then use this as the null string
