@@ -460,8 +460,6 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 		Datum		origval;	/* possibly toasted Datum */
 		char		*stringval;	/* Toasted or not, it gets converted to this. */
 		bool		isnull;		/* column is null? */
-		static int      bool_typid = -1;
-		bool            isbool = 0;
 
 		attr = tupdesc->attrs[natt];
 
@@ -506,15 +504,7 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 			}
 
 			if(data->convert_bool) {
-				// simple cache for boolean type-id to avoid unnecessary calls to format_type_be
-				if(bool_typid == -1)
-					if(strcmp(format_type_be(typid), "boolean") == 0)
-						bool_typid = typid;
-
-				if(bool_typid != -1 && bool_typid == typid)
-					isbool = 1;
-
-				if(isbool) {
+				if(BOOLOID == typid) {
 					switch (stringIsBooleanAndValue(stringval)) {
 						case -1: break; // can't tell
 						case 0: stringval = "0"; break; // false
