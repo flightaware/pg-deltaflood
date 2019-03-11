@@ -461,7 +461,11 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 		char		*stringval;	/* Toasted or not, it gets converted to this. */
 		bool		isnull;		/* column is null? */
 
+#if PG_VERSION_NUM >= 110000
+		attr = &tupdesc->attrs[natt];
+#else
 		attr = tupdesc->attrs[natt];
+#endif
 
 		/*
 		 * don't print dropped columns, we can't be sure everything is
