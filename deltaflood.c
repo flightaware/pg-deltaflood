@@ -72,6 +72,7 @@ typedef struct
 	char		*null_string;
 	char		*sep_string;
 	bool		escape_chars;
+	bool		escape_unicode;
 	bool		convert_bool;
 } DeltaFloodData;
 
@@ -173,6 +174,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->null_string = NULL;
 	data->sep_string = NULL;
 	data->escape_chars = true;
+	data->escape_unicode = false;
 	data->convert_bool = true;
 
 	ctx->output_plugin_private = data;
@@ -212,6 +214,17 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 			/* if option does not provide a value, it means its value is true */
 			if (elem->arg == NULL)
 				data->escape_chars = true;
+			else if (!parse_bool(strVal(elem->arg), &data->escape_chars))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+								strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "escape-unicode") == 0)
+		{
+			/* if option does not provide a value, it means its value is true */
+			if (elem->arg == NULL)
+				data->escape_unicode = true;
 			else if (!parse_bool(strVal(elem->arg), &data->escape_chars))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -383,7 +396,7 @@ pg_decode_filter(LogicalDecodingContext *ctx,
  * also "\" with "\\" to make de-escaping possible
  */
 static void
-appendStringEscaped(StringInfo s, char *outputstr)
+appendStringEscaped(StringInfo s, char *outputstr, bool escape_unicode)
 {
 	const char *valptr;
 
@@ -396,7 +409,7 @@ appendStringEscaped(StringInfo s, char *outputstr)
 			appendStringInfoString(s, "\\n");
 		else if(ch == '\\')
 			appendStringInfoString(s, "\\\\");
-		else if(ch < ' ' || ch > '~')
+		else if(escape_unicode && (ch < ' ' || ch > '~'))
 			appendStringInfo(s, "\\%03o", ch);
 		else
 			appendStringInfoChar(s, ch);
@@ -520,13 +533,13 @@ appendTupleAsTSV(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, DeltaFloodDat
 
 		appendStringInfoString(s, sep_string);
 		if(data->escape_chars)
-			appendStringEscaped(s, NameStr(attr->attname));
+			appendStringEscaped(s, NameStr(attr->attname), data->escape_unicode);
 		else
 			appendStringInfoString(s, NameStr(attr->attname));
 
 		appendStringInfoString(s, sep_string);
 		if(data->escape_chars)
-			appendStringEscaped(s, stringval);
+			appendStringEscaped(s, stringval, data->escape_unicode);
 		else
 			appendStringInfoString(s, stringval);
 	}
