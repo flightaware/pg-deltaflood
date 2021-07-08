@@ -389,14 +389,14 @@ appendStringEscaped(StringInfo s, char *outputstr)
 
 	for (valptr = outputstr; *valptr; valptr++)
 	{
-		char		ch = *valptr;
+		unsigned int		ch = 0xFF & *valptr;
 		if(ch == '\t')
 			appendStringInfoString(s, "\\t");
 		else if(ch == '\n')
 			appendStringInfoString(s, "\\n");
 		else if(ch == '\\')
 			appendStringInfoString(s, "\\\\");
-		else if(ch < ' ')
+		else if(ch < ' ' || ch > '~')
 			appendStringInfo(s, "\\%03o", ch);
 		else
 			appendStringInfoChar(s, ch);
